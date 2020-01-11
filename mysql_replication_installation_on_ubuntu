@@ -1,1 +1,19 @@
 
+1. sudo apt-get update      
+2. sudo apt-get install mysql-server   
+ 
+3. 
+vagrant@ubuntu-xenial:~$ mysql -u root -p -e "SHOW VARIABLES LIKE 'basedir'"
+Enter password:
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| basedir       | /usr/ |
++---------------+-------+
+
+4.
+$ mkdir rpl
+$ cd rpl
+$ mkdir data
+
+mysqld --no-default --user=cbell --initialize-insecure --basedir=/usr/ --datadir=/home/vagrant/rpl/data/master
