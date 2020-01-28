@@ -1,19 +1,136 @@
+Prerequisites
 
-1. sudo apt-get update      
-2. sudo apt-get install mysql-server   
- 
-3. 
-vagrant@ubuntu-xenial:~$ mysql -u root -p -e "SHOW VARIABLES LIKE 'basedir'"
-Enter password:
-+---------------+-------+
-| Variable_name | Value |
-+---------------+-------+
-| basedir       | /usr/ |
-+---------------+-------+
+A valid AWS account
+Two separate AWS Cloud EC2 instances running Ubuntu 16.04 Operating System
+A non-root user with sudo-privileges for both instances.
 
-4.
-$ mkdir rpl
-$ cd rpl
-$ mkdir data
 
-mysqld --no-default --user=cbell --initialize-insecure --basedir=/usr/ --datadir=/home/vagrant/rpl/data/master
+For the sake of simplicity, we will use be using two servers; server 1 and server 2 with the IP addresses 11.11.11.11 and 22.22.22.22
+
+
+Step 1: Install MySQL Server On Server 1 (Master)
+$ sudo apt-get update
+$ sudo apt-get install mysql-server
+
+Step 2: Edit MySQL Configuration File on Server 1
+$ sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+Look for the line bind-address and change its value to '0.0.0.0'.
+bind-address = 127.0.0.1
+change to 
+bind-address =0.0.0.0
+
+This will cause MySQL to allow inbound connections.
+Next, add the below lines near the end of that configuration file:
+
+server-id = 1
+log_bin = /var/log/mysql/mysql-bin.log
+log_bin_index =/var/log/mysql/mysql-bin.log.index
+relay_log = /var/log/mysql/mysql-relay-bin
+relay_log_index = /var/log/mysql/mysql-relay-bin.index
+
+Restart MySQL server for the changes to take effect:
+$ sudo service mysql restart  
+
+
+Step 3: Create a New User for Replication Services on Server 1
+
+Next you need to create a new user that will handle replication services on server 1. So, log in to your MySQL on server 1.
+
+$ sudo mysql -u root -p
+
+Enter your password when prompted to do so and hit Enter to continue.
+On the MySQL prompt that appears, enter the below SQL queries to create the user:
+
+mysql > create user 'replication_user'@'%' identified by 'PASSWORD';
+mysql > GRANT REPLICATION SLAVE ON *.* TO 'replication_user'@'%';
+mysql > FLUSH PRIVILEGES;
+
+Remember to replace 'PASSWORD' with a strong value for security purposes.
+Before you exit the MySQL prompt, enter the command below to view information about the position and file of the Master Server
+
+mysql> show master status; 
++------------------+----------+--------------+------------------+-------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++------------------+----------+--------------+------------------+-------------------+
+| mysql-bin.000001 |      154 |              |                  |                   |
++------------------+----------+--------------+------------------+-------------------+
+1 row in set (0.00 sec)
+Here, you need to note the file name, 'mysql-bin.000001' and Position '154'. You will need these details when configuring server 2. Please note, these values might be different on your server.
+
+
+Step 4: Install MySQL On Server 2 (Slave)
+
+$ sudo apt-get update
+$ sudo apt-get install mysql-server
+
+Step 5: Modify the Configuration File on Server 2
+
+Next, edit the MySQL configuration file on server 2 to allow remote access:
+
+$ sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+Look for the line bind-address and change its value to '0.0.0.0'.
+
+bind-address = 127.0.0.1
+Change to:
+bind-address =0.0.0.0
+
+This will cause MySQL to allow inbound connections.
+Next, add the below lines near the end of the file:
+
+server-id = 2
+log_bin = /var/log/mysql/mysql-bin.log
+log_bin_index =/var/log/mysql/mysql-bin.log.index
+relay_log = /var/log/mysql/mysql-relay-bin
+relay_log_index = /var/log/mysql/mysql-relay-bin.index
+
+Restart MySQL on server 2 for the changes to take effect:
+$ sudo service mysql restart 
+
+Step 6: Change Master-Slave Configuration on Server 2
+Next, login to MySQL on server 2:
+$ sudo mysql -u root -p
+
+On the MySQL prompt that appears, enter the below details and replace IP address (11.11.11.11) with the public IP address associated with your Alibaba ECS instance running server 1.
+Also, replace the 'MASTER_LOG_FILE' and 'MASTER_LOG_POS' with the information you obtained from server 1. 
+The MySQL username and password should also match the values you created on server 1.
+
+mysql> stop slave; 
+mysql> CHANGE MASTER TO MASTER_HOST = '11.11.11.11', MASTER_USER = 'replication_user', MASTER_PASSWORD = 'PASSWORD', MASTER_LOG_FILE = 'mysql-bin.000001', MASTER_LOG_POS = 753; 
+mysql > start slave;
+mysql > Quit;
+
+
+Step 7: Test the Configuration
+
+You should now test the configuration and see whether MySQL replication is working as expected. To confirm this, log in to MySQL on server 1
+
+$ sudo mysql -u root -p
+
+Enter your root password and hit Enter to continue.
+On the MySQL prompt that appears, create a database (e.g. replica_demo ):
+
+mysql> create database replica_demo;
+Query OK, 1 row affected (0.01 sec)
+
+Then, log in to MySQL on server 2:
+
+$ sudo mysql -u root -p
+Enter your root password and hit Enter to continue.
+On the MySQL prompt that appears, type the below SQL command to list available databases:
+
+mysql> show databases;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| mysql              |
+| performance_schema |
+| replica_demo       |
+| sys                |
++--------------------+
+5 rows in set (0.00 sec)
+
+
+
+
+
